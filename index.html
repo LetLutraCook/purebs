@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D Physics Shatter Lab</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Cannon.js Physics Engine -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+
+    <style>
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            touch-action: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            background-color: #080c14;
+            color: #f3f4f6;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        .glass-panel {
+            background: rgba(13, 19, 33, 0.82);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+        }
+        .glass-button {
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-button:active, .glass-button.active {
+            background: rgba(59, 130, 246, 0.35);
+            border-color: rgba(96, 165, 250, 0.6);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+        }
+        .font-mono-num {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        #touch-indicator {
+            pointer-events: none;
+            position: absolute;
+            transform: translate(-50%, -50%);
+            width: 54px;
+            height: 54px;
+            border: 2px dashed rgba(96, 165, 250, 0.8);
+            border-radius: 50%;
+            display: none;
+            z-index: 10;
+            animation: spin 6s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: translate(-50%, -50%) rotate(0deg); }
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+        /* Custom scrollbar for settings panel */
+        .custom-scroll::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="select-none overflow-hidden">
+
+    <!-- 3D Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- Aim Ring Target -->
+    <div id="touch-indicator"></div>
+
+    <!-- UI Top Header -->
+    <header class="absolute top-0 left-0 w-full p-3 sm:p-4 z-20 pointer-events-none flex justify-between items-center">
+        <!-- Brand Badge -->
+        <div class="glass-panel rounded-2xl p-2.5 sm:p-3 pointer-events-auto flex items-center gap-3">
+            <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+                <i class="fa-solid fa-cubes-stacked text-lg"></i>
+            </div>
+            <div>
+                <h1 class="text-sm sm:text-base font-bold tracking-tight text-white leading-none">Shatter Lab</h1>
+                <p class="text-[11px] text-slate-400 mt-0.5">Touch & Drag to Aim • Release to Throw</p>
+            </div>
+        </div>
+
+        <!-- Top Right Quick Actions & Menu Toggle -->
+        <div class="flex items-center gap-2 pointer-events-auto">
+            <!-- Fast Rebuild Button -->
+            <button id="btn-quick-rebuild" title="Rebuild Wall" class="glass-button w-10 h-10 rounded-xl flex items-center justify-center text-blue-400 hover:text-white active:scale-95">
+                <i class="fa-solid fa-rotate-right text-base"></i>
+            </button>
+
+            <!-- Settings Menu Toggle Dropdown Button -->
+            <button id="btn-toggle-menu" class="glass-button px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 text-white active:scale-95">
+                <i class="fa-solid fa-sliders text-blue-400 text-sm"></i>
+                <span class="hidden sm:inline">Settings</span>
+                <i class="fa-solid fa-chevron-down text-[10px] text-slate-400 transition-transform duration-300" id="menu-chevron"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Collapsible Settings Dropdown Panel -->
+    <div id="settings-panel" class="hidden absolute top-16 right-3 sm:right-4 w-[92vw] sm:w-80 max-h-[80vh] glass-panel rounded-2xl p-4 z-30 pointer-events-auto overflow-y-auto custom-scroll flex flex-col gap-4 transition-all duration-300">
+        
+        <!-- Header Stat Bar -->
+        <div class="flex justify-between items-center pb-2 border-b border-white/10">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Lab Configurations</span>
+            <span id="fps-counter" class="text-xs font-mono-num font-semibold text-emerald-400">60 FPS</span>
+        </div>
+
+        <!-- Graphics Quality Setting -->
+        <div class="flex flex-col gap-1.5">
+            <label class="text-xs text-slate-300 font-medium flex justify-between">
+                <span>Graphics Mode</span>
+                <span id="graphics-val" class="text-blue-400 font-semibold">High</span>
+            </label>
+            <div class="grid grid-cols-2 gap-2">
+                <button data-quality="low" class="quality-btn glass-button py-2 rounded-xl text-xs font-medium text-slate-300">Low</button>
+                <button data-quality="high" class="quality-btn glass-button active py-2 rounded-xl text-xs font-medium text-white">High</button>
+            </div>
+        </div>
+
+        <!-- Wall Material Selection Dropdown -->
+        <div class="flex flex-col gap-1.5">
+            <label class="text-xs text-slate-300 font-medium">Wall Material</label>
+            <select id="select-wall" class="glass-button w-full p-2.5 rounded-xl text-xs text-white bg-slate-900/80 outline-none cursor-pointer">
+                <option value="glass">💎 Glass Grid (Fragile Shatter)</option>
+                <option value="brick">🧱 Red Brick (Structural)</option>
+                <option value="wood">🪵 Wood Stack (Heavy Splinter)</option>
+                <option value="ice">🧊 Ice Blocks (Low Friction)</option>
+                <option value="concrete">🪨 Solid Concrete (Massive)</option>
+            </select>
+        </div>
+
+        <!-- Ball Selection Dropdown & Physical Properties -->
+        <div class="flex flex-col gap-1.5">
+            <label class="text-xs text-slate-300 font-medium">Ball Type & Physical Property</label>
+            <select id="select-ball" class="glass-button w-full p-2.5 rounded-xl text-xs text-white bg-slate-900/80 outline-none cursor-pointer">
+                <option value="soft">🟡 Soft Squishy Jello (Deforms On Impact)</option>
+                <option value="explosive">💣 Explosive Bomb (Shockwave Detonation)</option>
+                <option value="steel">⚙️ Heavy Steel Chrome (High Density)</option>
+                <option value="rubber">🔴 Super Bouncy Rubber (High Bounce)</option>
+                <option value="cannon">🎳 Giant Wrecking Ball (Massive Force)</option>
+            </select>
+        </div>
+
+        <!-- Throw Velocity Slider -->
+        <div class="flex flex-col gap-1.5">
+            <div class="flex justify-between text-xs text-slate-300 font-medium">
+                <span>Throw Velocity</span>
+                <span id="power-val" class="font-mono-num text-blue-400 font-bold">55 m/s</span>
+            </div>
+            <input id="slider-power" type="range" min="20" max="100" value="55" class="w-full accent-blue-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg appearance-none">
+        </div>
+
+        <!-- Gravity Slider -->
+        <div class="flex flex-col gap-1.5">
+            <div class="flex justify-between text-xs text-slate-300 font-medium">
+                <span>Gravity Strength</span>
+                <span id="gravity-val" class="font-mono-num text-blue-400 font-bold">1.0x</span>
+            </div>
+            <input id="slider-gravity" type="range" min="0" max="2.5" step="0.1" value="1.0" class="w-full accent-blue-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg appearance-none">
+        </div>
+
+        <!-- Cool Physics Toggles -->
+        <div class="grid grid-cols-2 gap-2 pt-1 border-t border-white/10">
+            <button id="btn-slowmo" class="glass-button p-2.5 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-gauge text-amber-400"></i>
+                <span>Slow Motion</span>
+            </button>
+            <button id="btn-audio" class="glass-button p-2.5 rounded-xl text-xs font-medium text-slate-300 flex items-center justify-center gap-1.5">
+                <i id="audio-icon" class="fa-solid fa-volume-high text-blue-400"></i>
+                <span>Sound Effects</span>
+            </button>
+        </div>
+
+        <!-- Lighting Preset Selector -->
+        <div class="flex flex-col gap-1.5">
+            <label class="text-xs text-slate-300 font-medium">Lighting Environment</label>
+            <div class="grid grid-cols-3 gap-1.5">
+                <button data-env="cyber" class="env-btn glass-button active py-1.5 rounded-lg text-[11px] font-medium text-white">Cyber</button>
+                <button data-env="sunset" class="env-btn glass-button py-1.5 rounded-lg text-[11px] font-medium text-slate-300">Sunset</button>
+                <button data-env="studio" class="env-btn glass-button py-1.5 rounded-lg text-[11px] font-medium text-slate-300">Studio</button>
+            </div>
+        </div>
+
+        <!-- Rebuild Wall Full Button -->
+        <button id="btn-rebuild" class="w-full glass-button bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 active:scale-95 shadow-lg shadow-blue-600/30 mt-1">
+            <i class="fa-solid fa-rotate-right"></i>
+            <span>Reset Scene & Rebuild</span>
+        </button>
+    </div>
+
+    <!-- Application Script -->
+    <script>
+        // --- Synthesizer Sound Engine ---
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+                this.muted = false;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioCtx();
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            playLaunch() {
+                if (this.muted) return;
+                this.init();
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(100, now);
+                osc.frequency.exponentialRampToValueAtTime(350, now + 0.15);
+
+                gain.gain.setValueAtTime(0.25, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start(now);
+                osc.stop(now + 0.18);
+            }
+
+            playImpact(type = 'glass', intensity = 1) {
+                if (this.muted) return;
+                this.init();
+                const now = this.ctx.currentTime;
+
+                const bufferSize = this.ctx.sampleRate * 0.35;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = this.ctx.createBiquadFilter();
+                const gain = this.ctx.createGain();
+
+                if (type === 'glass' || type === 'ice') {
+                    filter.type = 'highpass';
+                    filter.frequency.setValueAtTime(3000, now);
+                    filter.frequency.exponentialRampToValueAtTime(9000, now + 0.2);
+                    gain.gain.setValueAtTime(Math.min(0.8, 0.4 * intensity), now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+                } else if (type === 'soft') {
+                    filter.type = 'lowpass';
+                    filter.frequency.setValueAtTime(400, now);
+                    gain.gain.setValueAtTime(Math.min(0.6, 0.3 * intensity), now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+                } else if (type === 'explosive') {
+                    filter.type = 'lowpass';
+                    filter.frequency.setValueAtTime(1200, now);
+                    filter.frequency.exponentialRampToValueAtTime(80, now + 0.4);
+                    gain.gain.setValueAtTime(0.9, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+                } else {
+                    filter.type = 'lowpass';
+                    filter.frequency.setValueAtTime(900, now);
+                    filter.frequency.linearRampToValueAtTime(250, now + 0.3);
+                    gain.gain.setValueAtTime(Math.min(0.8, 0.5 * intensity), now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+                }
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                noise.start(now);
+                noise.stop(now + 0.45);
+            }
+        }
+
+        const audio = new SoundEngine();
+
+        // --- Main Simulation App ---
+        class ShatterLabApp {
+            constructor() {
+                this.quality = 'high';
+                this.selectedWall = 'glass';
+                this.selectedBall = 'soft';
+                this.throwVelocity = 55;
+                this.gravityMult = 1.0;
+                this.isSlowMo = false;
+                this.currentEnv = 'cyber';
+
+                this.physicsBodies = [];
+                this.visualMeshes = [];
+                this.activeBalls = [];
+                this.particleSystems = [];
+
+                this.fps = 60;
+                this.frameCount = 0;
+                this.lastFpsTime = performance.now();
+
+                // Pointer Input State Locking to eliminate double throws
+                this.isPointerDown = false;
+                this.activePointerId = null;
+
+                this.initEngine();
+                this.initLighting();
+                this.initPhysics();
+                this.initTrajectoryLine();
+                this.initEnvironment();
+                this.rebuildWall();
+                this.setupControls();
+
+                this.animate = this.animate.bind(this);
+                requestAnimationFrame(this.animate);
+            }
+
+            initEngine() {
+                this.container = document.getElementById('canvas-container');
+                
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x080c14);
+                this.scene.fog = new THREE.FogExp2(0x080c14, 0.012);
+
+                this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 150);
+                this.camera.position.set(0, 3, 16);
+                this.camera.lookAt(0, 3, 0);
+
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+                this.container.appendChild(this.renderer.domElement);
+                this.raycaster = new THREE.Raycaster();
+
+                window.addEventListener('resize', () => this.onWindowResize());
+            }
+
+            initLighting() {
+                this.ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+                this.scene.add(this.ambientLight);
+
+                this.dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
+                this.dirLight.position.set(12, 20, 15);
+                this.dirLight.castShadow = true;
+                this.dirLight.shadow.mapSize.width = 2048;
+                this.dirLight.shadow.mapSize.height = 2048;
+                this.dirLight.shadow.camera.near = 0.5;
+                this.dirLight.shadow.camera.far = 50;
+                this.dirLight.shadow.camera.left = -12;
+                this.dirLight.shadow.camera.right = 12;
+                this.dirLight.shadow.camera.top = 12;
+                this.dirLight.shadow.camera.bottom = -2;
+                this.scene.add(this.dirLight);
+
+                this.rimLight = new THREE.PointLight(0x3b82f6, 3, 30);
+                this.rimLight.position.set(-10, 8, -5);
+                this.scene.add(this.rimLight);
+            }
+
+            setEnvironmentTheme(theme) {
+                this.currentEnv = theme;
+                if (theme === 'cyber') {
+                    this.scene.background.setHex(0x080c14);
+                    this.scene.fog.color.setHex(0x080c14);
+                    this.ambientLight.color.setHex(0xffffff);
+                    this.ambientLight.intensity = 0.6;
+                    this.rimLight.color.setHex(0x3b82f6);
+                } else if (theme === 'sunset') {
+                    this.scene.background.setHex(0x1a0f1d);
+                    this.scene.fog.color.setHex(0x1a0f1d);
+                    this.ambientLight.color.setHex(0xfda4af);
+                    this.ambientLight.intensity = 0.8;
+                    this.rimLight.color.setHex(0xf97316);
+                } else if (theme === 'studio') {
+                    this.scene.background.setHex(0x1e293b);
+                    this.scene.fog.color.setHex(0x1e293b);
+                    this.ambientLight.color.setHex(0xffffff);
+                    this.ambientLight.intensity = 0.9;
+                    this.rimLight.color.setHex(0x94a3b8);
+                }
+            }
+
+            initPhysics() {
+                this.world = new CANNON.World();
+                this.world.gravity.set(0, -9.82 * this.gravityMult, 0);
+                this.world.broadphase = new CANNON.NaiveBroadphase();
+                this.world.solver.iterations = 15;
+                // Enable sleep to avoid premature structural collapse
+                this.world.allowSleep = true;
+
+                this.defaultMaterial = new CANNON.Material('default');
+                const contactMat = new CANNON.ContactMaterial(
+                    this.defaultMaterial,
+                    this.defaultMaterial,
+                    { friction: 0.5, restitution: 0.1 }
+                );
+                this.world.addContactMaterial(contactMat);
+
+                // Ground Plane Physics
+                const groundShape = new CANNON.Plane();
+                this.groundBody = new CANNON.Body({ mass: 0, material: this.defaultMaterial });
+                this.groundBody.addShape(groundShape);
+                this.groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+                this.world.addBody(this.groundBody);
+            }
+
+            initEnvironment() {
+                const groundGeo = new THREE.PlaneGeometry(100, 100);
+                const groundMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 });
+                this.groundMesh = new THREE.Mesh(groundGeo, groundMat);
+                this.groundMesh.rotation.x = -Math.PI / 2;
+                this.groundMesh.receiveShadow = true;
+                this.scene.add(this.groundMesh);
+
+                const gridHelper = new THREE.GridHelper(100, 50, 0x3b82f6, 0x1e293b);
+                gridHelper.position.y = 0.01;
+                this.scene.add(gridHelper);
+            }
+
+            initTrajectoryLine() {
+                const maxPoints = 40;
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(maxPoints * 3);
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+                const material = new THREE.LineDashedMaterial({
+                    color: 0x60a5fa,
+                    dashSize: 0.3,
+                    gapSize: 0.2,
+                    linewidth: 2
+                });
+
+                this.trajectoryLine = new THREE.Line(geometry, material);
+                this.trajectoryLine.frustumCulled = false;
+                this.trajectoryLine.visible = false;
+                this.scene.add(this.trajectoryLine);
+            }
+
+            updateTrajectory(startPos, velocity) {
+                const positions = this.trajectoryLine.geometry.attributes.position.array;
+                const dt = 0.035;
+                let currentPos = startPos.clone();
+                let currentVel = velocity.clone();
+
+                for (let i = 0; i < 40; i++) {
+                    positions[i * 3] = currentPos.x;
+                    positions[i * 3 + 1] = currentPos.y;
+                    positions[i * 3 + 2] = currentPos.z;
+
+                    currentPos.addScaledVector(currentVel, dt);
+                    currentVel.y += -9.82 * this.gravityMult * dt;
+                }
+
+                this.trajectoryLine.geometry.attributes.position.needsUpdate = true;
+                this.trajectoryLine.computeLineDistances();
+                this.trajectoryLine.visible = true;
+            }
+
+            // --- Wall Rebuilding Engine (Fixed Stability Bugs) ---
+            clearWall() {
+                this.physicsBodies.forEach(body => this.world.removeBody(body));
+                this.physicsBodies = [];
+
+                this.visualMeshes.forEach(mesh => this.scene.remove(mesh));
+                this.visualMeshes = [];
+
+                this.activeBalls.forEach(b => {
+                    this.scene.remove(b.mesh);
+                    this.world.removeBody(b.body);
+                });
+                this.activeBalls = [];
+            }
+
+            rebuildWall() {
+                this.clearWall();
+
+                const type = this.selectedWall;
+                const isHigh = this.quality === 'high';
+
+                // Configure wall dimensions
+                let cols = isHigh ? 12 : 8;
+                let rows = isHigh ? 10 : 7;
+                let blockW = 0.8, blockH = 0.4, blockD = 0.3;
+                let mass = 1.0;
+                let mat;
+
+                if (type === 'glass') {
+                    cols = isHigh ? 14 : 9;
+                    rows = isHigh ? 10 : 7;
+                    blockW = 0.6; blockH = 0.5; blockD = 0.12;
+                    mass = 0.2;
+                    mat = isHigh ? new THREE.MeshPhysicalMaterial({
+                        color: 0xe0f2fe,
+                        transmission: 0.9,
+                        opacity: 1,
+                        transparent: true,
+                        roughness: 0.05,
+                        ior: 1.5,
+                        thickness: 0.3
+                    }) : new THREE.MeshStandardMaterial({
+                        color: 0x93c5fd,
+                        opacity: 0.6,
+                        transparent: true,
+                        roughness: 0.2
+                    });
+                } else if (type === 'brick') {
+                    blockW = 0.7; blockH = 0.35; blockD = 0.35;
+                    mass = 1.5;
+                    mat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.85 });
+                } else if (type === 'wood') {
+                    cols = isHigh ? 10 : 7;
+                    rows = isHigh ? 12 : 8;
+                    blockW = 0.9; blockH = 0.3; blockD = 0.3;
+                    mass = 0.8;
+                    mat = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.6 });
+                } else if (type === 'ice') {
+                    cols = isHigh ? 12 : 8;
+                    rows = isHigh ? 9 : 6;
+                    blockW = 0.75; blockH = 0.45; blockD = 0.35;
+                    mass = 0.9;
+                    mat = new THREE.MeshPhysicalMaterial({
+                        color: 0xa5f3fc,
+                        transmission: 0.8,
+                        roughness: 0.1,
+                        transparent: true
+                    });
+                } else if (type === 'concrete') {
+                    cols = 5; rows = 5;
+                    blockW = 1.2; blockH = 1.0; blockD = 0.8;
+                    mass = 8.0;
+                    mat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.9 });
+                }
+
+                // Tiny clearance gaps (0.005m) between blocks prevents overlap energy explosion
+                const gap = 0.005;
+
+                for (let r = 0; r < rows; r++) {
+                    const offset = (type === 'brick' && r % 2 === 1) ? blockW / 2 : 0;
+                    for (let c = 0; c < cols; c++) {
+                        const posX = (c - cols / 2) * (blockW + gap) + offset;
+                        const posY = r * (blockH + gap) + blockH / 2 + 0.02;
+                        const posZ = 0;
+
+                        const mesh = new THREE.Mesh(new THREE.BoxGeometry(blockW, blockH, blockD), mat);
+                        mesh.position.set(posX, posY, posZ);
+                        mesh.castShadow = true;
+                        mesh.receiveShadow = true;
+
+                        const shape = new CANNON.Box(new CANNON.Vec3(blockW / 2, blockH / 2, blockD / 2));
+                        const body = new CANNON.Body({
+                            mass: mass,
+                            material: this.defaultMaterial,
+                            linearDamping: 0.1,
+                            angularDamping: 0.1
+                        });
+
+                        body.addShape(shape);
+                        body.position.set(posX, posY, posZ);
+
+                        // Strict initial sleep configuration to prevent auto-collapse
+                        body.allowSleep = true;
+                        body.sleepSpeedLimit = 0.1;
+                        body.sleepTimeLimit = 0.5;
+                        body.sleep();
+
+                        this.world.addBody(body);
+                        this.scene.add(mesh);
+
+                        this.physicsBodies.push(body);
+                        this.visualMeshes.push(mesh);
+                    }
+                }
+            }
+
+            // --- Physical Ball Launch & Deformations ---
+            throwBall(targetWorldPos) {
+                const ballType = this.selectedBall;
+
+                let radius = 0.45;
+                let mass = 5.0;
+                let restitution = 0.3;
+                let meshMaterial;
+
+                if (ballType === 'soft') {
+                    radius = 0.45; mass = 2.5; restitution = 0.1;
+                    meshMaterial = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.3 });
+                } else if (ballType === 'explosive') {
+                    radius = 0.5; mass = 4.0; restitution = 0.2;
+                    meshMaterial = new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0x991b1b, roughness: 0.2 });
+                } else if (ballType === 'steel') {
+                    radius = 0.5; mass = 18.0; restitution = 0.1;
+                    meshMaterial = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, metalness: 0.95, roughness: 0.1 });
+                } else if (ballType === 'rubber') {
+                    radius = 0.4; mass = 2.0; restitution = 0.95;
+                    meshMaterial = new THREE.MeshStandardMaterial({ color: 0xec4899, roughness: 0.2 });
+                } else if (ballType === 'cannon') {
+                    radius = 0.75; mass = 45.0; restitution = 0.05;
+                    meshMaterial = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.5 });
+                }
+
+                const startPos = new THREE.Vector3(0, 1.5, 12);
+                const launchDir = new THREE.Vector3().subVectors(targetWorldPos, startPos).normalize();
+                const launchVelocity = launchDir.multiplyScalar(this.throwVelocity);
+
+                // Create Mesh Geometry (Sphere with individual vertex references for deformation)
+                const geometry = new THREE.SphereGeometry(radius, 32, 32);
+                const mesh = new THREE.Mesh(geometry, meshMaterial);
+                mesh.position.copy(startPos);
+                mesh.castShadow = true;
+                this.scene.add(mesh);
+
+                // Store base vertex offsets for squishy deformation restoration
+                const basePositions = geometry.attributes.position.array.slice();
+
+                // Cannon Body
+                const ballMat = new CANNON.Material('ballMat');
+                const shape = new CANNON.Sphere(radius);
+                const body = new CANNON.Body({
+                    mass: mass,
+                    material: ballMat,
+                    linearDamping: 0.05
+                });
+                body.addShape(shape);
+                body.position.copy(startPos);
+                body.velocity.set(launchVelocity.x, launchVelocity.y, launchVelocity.z);
+
+                const contact = new CANNON.ContactMaterial(ballMat, this.defaultMaterial, {
+                    friction: 0.3,
+                    restitution: restitution
+                });
+                this.world.addContactMaterial(contact);
+                this.world.addBody(body);
+
+                // Impact & Collision Trigger Logic
+                body.addEventListener('collide', (evt) => {
+                    // Wake up adjacent bodies upon impact
+                    this.physicsBodies.forEach(b => { if (b.sleepState === CANNON.Body.SLEEPING) b.wakeUp(); });
+
+                    const impactVelocity = evt.contact.getImpactVelocityAlongNormal();
+                    if (impactVelocity > 1.5) {
+                        audio.playImpact(ballType === 'explosive' ? 'explosive' : this.selectedWall, impactVelocity / 20);
+                        this.spawnImpactParticles(mesh.position, this.selectedWall);
+
+                        // Deform Soft Jello Ball visual vertices
+                        if (ballType === 'soft') {
+                            this.deformMeshOnImpact(mesh, basePositions, impactVelocity);
+                        }
+
+                        // Detonate Explosive Bomb Ball
+                        if (ballType === 'explosive' && !body.hasExploded) {
+                            body.hasExploded = true;
+                            this.triggerExplosion(mesh.position);
+                        }
+                    }
+                });
+
+                this.activeBalls.push({
+                    mesh, body, type: ballType, basePositions, deformTime: 0
+                });
+
+                audio.playLaunch();
+            }
+
+            // Visual Mesh Squish Deformation Effect
+            deformMeshOnImpact(mesh, basePositions, impactStrength) {
+                const positions = mesh.geometry.attributes.position.array;
+                const factor = Math.min(0.4, impactStrength * 0.02);
+
+                for (let i = 0; i < positions.length; i += 3) {
+                    positions[i] += (Math.random() - 0.5) * factor;
+                    positions[i + 1] += (Math.random() - 0.5) * factor;
+                    positions[i + 2] += (Math.random() - 0.5) * factor;
+                }
+                mesh.geometry.attributes.position.needsUpdate = true;
+            }
+
+            // Radial Explosion Physics Detonation
+            triggerExplosion(center) {
+                const explosionRadius = 5.0;
+                const explosionForce = 800.0;
+
+                this.physicsBodies.forEach(body => {
+                    const dist = body.position.distanceTo(center);
+                    if (dist < explosionRadius) {
+                        body.wakeUp();
+                        const dir = body.position.vsub(center);
+                        dir.normalize();
+                        const force = explosionForce * (1 - dist / explosionRadius);
+                        body.applyImpulse(dir.scale(force), body.position);
+                    }
+                });
+
+                // Spawn Fireball Particle Burst
+                this.spawnExplosionFireball(center);
+            }
+
+            spawnExplosionFireball(pos) {
+                const particleCount = 40;
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(particleCount * 3);
+                const velocities = [];
+
+                for (let i = 0; i < particleCount; i++) {
+                    positions[i * 3] = pos.x;
+                    positions[i * 3 + 1] = pos.y;
+                    positions[i * 3 + 2] = pos.z;
+
+                    velocities.push(new THREE.Vector3(
+                        (Math.random() - 0.5) * 12,
+                        (Math.random() - 0.5) * 12 + 4,
+                        (Math.random() - 0.5) * 12
+                    ));
+                }
+
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                const pMaterial = new THREE.PointsMaterial({
+                    color: 0xf97316,
+                    size: 0.35,
+                    transparent: true,
+                    opacity: 1
+                });
+
+                const pSystem = new THREE.Points(geometry, pMaterial);
+                this.scene.add(pSystem);
+                this.particleSystems.push({ system: pSystem, velocities, age: 0, maxAge: 0.6 });
+            }
+
+            spawnImpactParticles(pos, wallType) {
+                if (this.quality === 'low') return;
+
+                const particleCount = 12;
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(particleCount * 3);
+                const velocities = [];
+
+                for (let i = 0; i < particleCount; i++) {
+                    positions[i * 3] = pos.x;
+                    positions[i * 3 + 1] = pos.y;
+                    positions[i * 3 + 2] = pos.z;
+
+                    velocities.push(new THREE.Vector3(
+                        (Math.random() - 0.5) * 5,
+                        (Math.random() - 0.5) * 5 + 2,
+                        (Math.random() - 0.5) * 5
+                    ));
+                }
+
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+                let color = 0x93c5fd;
+                if (wallType === 'brick') color = 0xef4444;
+                if (wallType === 'wood') color = 0xd97706;
+
+                const pMaterial = new THREE.PointsMaterial({ color, size: 0.12, transparent: true, opacity: 0.9 });
+                const pSystem = new THREE.Points(geometry, pMaterial);
+                this.scene.add(pSystem);
+                this.particleSystems.push({ system: pSystem, velocities, age: 0, maxAge: 0.5 });
+            }
+
+            // --- Robust Pointer Controls (Fixes Double Throw Bug) ---
+            setupControls() {
+                const container = document.body;
+                const indicator = document.getElementById('touch-indicator');
+
+                const getPointerRaycastTarget = (screenX, screenY) => {
+                    const aimPoint = new THREE.Vector2(
+                        (screenX / window.innerWidth) * 2 - 1,
+                        -(screenY / window.innerHeight) * 2 + 1
+                    );
+
+                    this.raycaster.setFromCamera(aimPoint, this.camera);
+                    const wallPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+                    const target = new THREE.Vector3();
+                    this.raycaster.ray.intersectPlane(wallPlane, target);
+                    return target;
+                };
+
+                // Pointer Down
+                container.addEventListener('pointerdown', (e) => {
+                    if (e.target.closest('#settings-panel, header, button, select, input')) return;
+                    if (this.isPointerDown) return; // Prevent double lock
+
+                    this.isPointerDown = true;
+                    this.activePointerId = e.pointerId;
+
+                    indicator.style.display = 'block';
+                    indicator.style.left = `${e.clientX}px`;
+                    indicator.style.top = `${e.clientY}px`;
+
+                    const target = getPointerRaycastTarget(e.clientX, e.clientY);
+                    const startPos = new THREE.Vector3(0, 1.5, 12);
+                    const launchDir = new THREE.Vector3().subVectors(target, startPos).normalize();
+                    this.updateTrajectory(startPos, launchDir.multiplyScalar(this.throwVelocity));
+                });
+
+                // Pointer Move
+                container.addEventListener('pointermove', (e) => {
+                    if (!this.isPointerDown || e.pointerId !== this.activePointerId) return;
+
+                    indicator.style.left = `${e.clientX}px`;
+                    indicator.style.top = `${e.clientY}px`;
+
+                    const target = getPointerRaycastTarget(e.clientX, e.clientY);
+                    const startPos = new THREE.Vector3(0, 1.5, 12);
+                    const launchDir = new THREE.Vector3().subVectors(target, startPos).normalize();
+                    this.updateTrajectory(startPos, launchDir.multiplyScalar(this.throwVelocity));
+                });
+
+                // Pointer Up / Cancel
+                const endPointer = (e) => {
+                    if (!this.isPointerDown || e.pointerId !== this.activePointerId) return;
+
+                    this.isPointerDown = false;
+                    this.activePointerId = null;
+                    indicator.style.display = 'none';
+                    this.trajectoryLine.visible = false;
+
+                    const target = getPointerRaycastTarget(e.clientX, e.clientY);
+                    this.throwBall(target);
+                };
+
+                container.addEventListener('pointerup', endPointer);
+                container.addEventListener('pointercancel', endPointer);
+
+                // Dropdown Settings Menu Toggle
+                const menuBtn = document.getElementById('btn-toggle-menu');
+                const settingsPanel = document.getElementById('settings-panel');
+                const menuChevron = document.getElementById('menu-chevron');
+
+                menuBtn.addEventListener('click', () => {
+                    const hidden = settingsPanel.classList.toggle('hidden');
+                    menuChevron.style.transform = hidden ? 'rotate(0deg)' : 'rotate(180deg)';
+                });
+
+                // Quick Action Rebuild Button
+                document.getElementById('btn-quick-rebuild').addEventListener('click', () => this.rebuildWall());
+                document.getElementById('btn-rebuild').addEventListener('click', () => this.rebuildWall());
+
+                // Wall Material Select Dropdown
+                document.getElementById('select-wall').addEventListener('change', (e) => {
+                    this.selectedWall = e.target.value;
+                    this.rebuildWall();
+                });
+
+                // Ball Material Select Dropdown
+                document.getElementById('select-ball').addEventListener('change', (e) => {
+                    this.selectedBall = e.target.value;
+                });
+
+                // Throw Velocity Slider
+                document.getElementById('slider-power').addEventListener('input', (e) => {
+                    this.throwVelocity = parseFloat(e.target.value);
+                    document.getElementById('power-val').textContent = `${this.throwVelocity} m/s`;
+                });
+
+                // Gravity Slider
+                document.getElementById('slider-gravity').addEventListener('input', (e) => {
+                    this.gravityMult = parseFloat(e.target.value);
+                    this.world.gravity.set(0, -9.82 * this.gravityMult, 0);
+                    document.getElementById('gravity-val').textContent = `${this.gravityMult.toFixed(1)}x`;
+                });
+
+                // Graphics Quality Buttons ("Low" / "High")
+                document.querySelectorAll('.quality-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        document.querySelectorAll('.quality-btn').forEach(b => b.classList.remove('active', 'text-white'));
+                        e.target.classList.add('active', 'text-white');
+
+                        this.quality = e.target.dataset.quality;
+                        document.getElementById('graphics-val').textContent = this.quality === 'high' ? 'High' : 'Low';
+
+                        if (this.quality === 'high') {
+                            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                            this.renderer.shadowMap.enabled = true;
+                        } else {
+                            this.renderer.setPixelRatio(1);
+                            this.renderer.shadowMap.enabled = false;
+                        }
+                        this.rebuildWall();
+                    });
+                });
+
+                // Lighting Environment Selector
+                document.querySelectorAll('.env-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        document.querySelectorAll('.env-btn').forEach(b => b.classList.remove('active', 'text-white'));
+                        e.target.classList.add('active', 'text-white');
+                        this.setEnvironmentTheme(e.target.dataset.env);
+                    });
+                });
+
+                // Slow-Motion Toggle
+                document.getElementById('btn-slowmo').addEventListener('click', (e) => {
+                    this.isSlowMo = !this.isSlowMo;
+                    const btn = document.getElementById('btn-slowmo');
+                    if (this.isSlowMo) {
+                        btn.classList.add('active');
+                    } else {
+                        btn.classList.remove('active');
+                    }
+                });
+
+                // Mute Sound Toggle
+                document.getElementById('btn-audio').addEventListener('click', () => {
+                    audio.muted = !audio.muted;
+                    const icon = document.getElementById('audio-icon');
+                    icon.className = audio.muted ? 'fa-solid fa-volume-xmark text-red-400' : 'fa-solid fa-volume-high text-blue-400';
+                });
+            }
+
+            onWindowResize() {
+                this.camera.aspect = window.innerWidth / window.innerHeight;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            // --- Main Simulation Loop ---
+            animate(time) {
+                requestAnimationFrame(this.animate);
+
+                // Apply Slow Motion factor if enabled
+                const timeStep = (this.isSlowMo ? 1 / 180 : 1 / 60);
+                this.world.step(timeStep);
+
+                // Update Wall Physics Transforms
+                for (let i = 0; i < this.physicsBodies.length; i++) {
+                    this.visualMeshes[i].position.copy(this.physicsBodies[i].position);
+                    this.visualMeshes[i].quaternion.copy(this.physicsBodies[i].quaternion);
+                }
+
+                // Update Ball Physics & Elastic Springs
+                for (let i = 0; i < this.activeBalls.length; i++) {
+                    const b = this.activeBalls[i];
+                    b.mesh.position.copy(b.body.position);
+                    b.mesh.quaternion.copy(b.body.quaternion);
+
+                    // Restore Soft Ball original vertex shape over time
+                    if (b.type === 'soft') {
+                        const positions = b.mesh.geometry.attributes.position.array;
+                        for (let j = 0; j < positions.length; j++) {
+                            positions[j] += (b.basePositions[j] - positions[j]) * 0.1;
+                        }
+                        b.mesh.geometry.attributes.position.needsUpdate = true;
+                    }
+
+                    // Remove out of bound projectiles
+                    if (b.mesh.position.y < -5 || b.mesh.position.z < -30) {
+                        this.scene.remove(b.mesh);
+                        this.world.removeBody(b.body);
+                        this.activeBalls.splice(i, 1);
+                        i--;
+                    }
+                }
+
+                // Update Particle FX
+                for (let i = 0; i < this.particleSystems.length; i++) {
+                    const ps = this.particleSystems[i];
+                    ps.age += 0.016;
+                    const positions = ps.system.geometry.attributes.position.array;
+
+                    for (let j = 0; j < ps.velocities.length; j++) {
+                        positions[j * 3] += ps.velocities[j].x * 0.016;
+                        positions[j * 3 + 1] += ps.velocities[j].y * 0.016;
+                        positions[j * 3 + 2] += ps.velocities[j].z * 0.016;
+                        ps.velocities[j].y -= 9.8 * this.gravityMult * 0.016;
+                    }
+
+                    ps.system.geometry.attributes.position.needsUpdate = true;
+                    ps.system.material.opacity = 1 - (ps.age / ps.maxAge);
+
+                    if (ps.age >= ps.maxAge) {
+                        this.scene.remove(ps.system);
+                        this.particleSystems.splice(i, 1);
+                        i--;
+                    }
+                }
+
+                this.renderer.render(this.scene, this.camera);
+
+                // FPS & Active Object Monitor
+                this.frameCount++;
+                if (time - this.lastFpsTime >= 1000) {
+                    this.fps = Math.round((this.frameCount * 1000) / (time - this.lastFpsTime));
+                    document.getElementById('fps-counter').textContent = `${this.fps} FPS / ${this.physicsBodies.length} Obj`;
+                    this.frameCount = 0;
+                    this.lastFpsTime = time;
+                }
+            }
+        }
+
+        // Initialize App
+        window.addEventListener('load', () => {
+            new ShatterLabApp();
+        });
+    </script>
+</body>
+</html>
