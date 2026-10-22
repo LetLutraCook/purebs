@@ -1,2 +1,2 @@
 # purebs
-Just bs
+sum strait bs!!!!!! 🔥 
