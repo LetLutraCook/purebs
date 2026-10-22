@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Material Lab</title>
+<style>
+:root{--bg:#0f172a;--pn:rgba(15,23,42,.97);--tx:#e2e8f0;--mu:#94a3b8;--ac:#38bdf8;--bd:rgba(255,255,255,.14);--ch:rgba(255,255,255,.07);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:light){:root:not([data-theme="dark"]){--bg:#f1f5f9;--pn:rgba(255,255,255,.98);--tx:#0f172a;--mu:#475569;--ac:#0369a1;--bd:rgba(0,0,0,.16);--ch:rgba(0,0,0,.05)}}
+:root[data-theme="light"]{--bg:#f1f5f9;--pn:rgba(255,255,255,.98);--tx:#0f172a;--mu:#475569;--ac:#0369a1;--bd:rgba(0,0,0,.16);--ch:rgba(0,0,0,.05)}
+*{box-sizing:border-box;margin:0;padding:0;touch-action:manipulation}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column}
+#cv{flex:1;min-height:0;position:relative;touch-action:none}
+#cv canvas{display:block;touch-action:none}
+#toast{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:var(--pn);border:1px solid var(--bd);padding:6px 14px;border-radius:20px;font-size:12px;opacity:0;transition:opacity .25s;pointer-events:none}
+#toast.show{opacity:1}
+#sheet{background:var(--pn);border-top:1px solid var(--bd);border-radius:16px 16px 0 0;height:46%;display:flex;flex-direction:column}
+#sheet.min{height:auto}
+#sheet.min #tabs,#sheet.min #body{display:none}
+#head{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;font-weight:700;font-size:15px}
+#head span{display:flex;gap:6px}
+button{font:inherit;font-size:13px;color:var(--tx);background:var(--ch);border:1px solid var(--bd);border-radius:8px;padding:6px 12px;min-height:36px}
+#tabs{display:flex;gap:6px;padding:0 12px 8px;overflow-x:auto;flex:none}
+#tabs button{flex:none}
+#tabs button.on{background:var(--ac);color:#04243a;border-color:var(--ac);font-weight:700}
+#body{flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:4px 12px 14px}
+.p{display:none;grid-template-columns:1fr 1fr;gap:10px 14px}
+.p.on{display:grid}
+.c{display:flex;flex-direction:column;gap:2px;min-width:0}
+.w{grid-column:span 2}
+.c label{display:flex;justify-content:space-between;font-size:11px;color:var(--mu);font-weight:600}
+.c i{font-style:normal;color:var(--ac)}
+input[type=range]{width:100%;height:30px;accent-color:var(--ac)}
+input[type=color]{width:100%;height:34px;border:1px solid var(--bd);border-radius:8px;background:none;padding:0}
+select{font:inherit;font-size:13px;height:34px;color:var(--tx);background:var(--ch);border:1px solid var(--bd);border-radius:8px;padding:0 8px}
+.t{flex-direction:row;align-items:center;gap:8px;min-height:34px}
+.t input{width:20px;height:20px;accent-color:var(--ac)}
+.t label{font-size:13px;color:var(--tx)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.s{position:relative;border:2px dashed var(--bd);border-radius:10px;padding:8px;text-align:center;min-height:64px;display:flex;flex-direction:column;justify-content:center;gap:2px;min-width:0}
+.s.has{border-style:solid;border-color:var(--ac)}
+.s input{position:absolute;inset:0;width:100%;height:100%;opacity:0}
+.s b{font-size:12px}
+.s span{font-size:11px;color:var(--ac);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.s button{position:absolute;top:2px;right:2px;z-index:2;padding:0;width:28px;min-height:28px;display:none}
+.s.has button{display:block}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+<div id="cv"><div id="toast"></div></div>
+<div id="sheet">
+  <div id="head">Material Lab<span><button id="rst">Reset</button><button id="col">Hide</button></span></div>
+  <div id="tabs"></div>
+  <div id="body"></div>
+</div>
+<script>
+const $=i=>document.getElementById(i), cv=$('cv');
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0f172a);
+const camera=new THREE.PerspectiveCamera(45,1,.1,100); camera.position.set(0,3,5);
+const R=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+R.setPixelRatio(Math.min(devicePixelRatio,2));
+R.shadowMap.enabled=true; R.shadowMap.type=THREE.PCFSoftShadowMap;
+R.outputEncoding=THREE.sRGBEncoding; R.toneMapping=THREE.ACESFilmicToneMapping;
+cv.appendChild(R.domElement);
+const controls=new THREE.OrbitControls(camera,R.domElement);
+controls.enableDamping=true; controls.dampingFactor=.06; controls.autoRotateSpeed=2;
+controls.touches={ONE:THREE.TOUCH.ROTATE,TWO:THREE.TOUCH.DOLLY_PAN};
+new ResizeObserver(()=>{const w=cv.clientWidth,h=cv.clientHeight;if(!w||!h)return;R.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix()}).observe(cv);
+
+// Studio-style environment for reflections, painted on a canvas (works on every GPU)
+(function(){
+  try{
+    const c=document.createElement('canvas');c.width=512;c.height=256;const x=c.getContext('2d');
+    const g=x.createLinearGradient(0,0,0,256);g.addColorStop(0,'#9fb4d0');g.addColorStop(.5,'#46546b');g.addColorStop(1,'#12151c');
+    x.fillStyle=g;x.fillRect(0,0,512,256);
+    x.fillStyle='#fff';[[60,40,110,50],[300,50,90,40],[430,90,70,30]].forEach(r=>x.fillRect(...r));
+    const t=new THREE.CanvasTexture(c);t.mapping=THREE.EquirectangularReflectionMapping;t.encoding=THREE.sRGBEncoding;
+    const pm=new THREE.PMREMGenerator(R);scene.environment=pm.fromEquirectangular(t).texture;t.dispose();pm.dispose();
+  }catch(e){console.warn('env skipped',e)}
+})();
+
+const amb=new THREE.AmbientLight(0xffffff,.4); scene.add(amb);
+const sun=new THREE.DirectionalLight(0xffffff,1.2);
+sun.castShadow=true; sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera,{near:.5,far:20,left:-3.5,right:3.5,top:3.5,bottom:-3.5});
+sun.shadow.bias=-.0005; sun.shadow.normalBias=.02; scene.add(sun);
+sun.add(new THREE.Mesh(new THREE.SphereGeometry(.1,16,16),new THREE.MeshBasicMaterial({color:0x38bdf8})));
+const grid=new THREE.GridHelper(10,20,0x334155,0x1e293b); grid.position.y=-.01; scene.add(grid);
+
+const M=new THREE.MeshPhysicalMaterial({color:0xffffff,roughness:.5,metalness:.1,side:THREE.DoubleSide});
+M.emissive.set(0xffffff);
+let mesh,shape='plane',seg=256;
+const shapes={
+  plane:s=>new THREE.PlaneGeometry(3,3,s,s),
+  sphere:s=>new THREE.SphereGeometry(1.3,s,s),
+  cube:s=>new THREE.BoxGeometry(2,2,2,s>>2,s>>2,s>>2),
+  torus:s=>new THREE.TorusKnotGeometry(.9,.35,s*2,s>>1)
+};
+function build(){
+  const g=shapes[shape](seg); g.setAttribute('uv2',g.attributes.uv);
+  if(!mesh){mesh=new THREE.Mesh(g,M);mesh.castShadow=mesh.receiveShadow=true;scene.add(mesh)}
+  else{mesh.geometry.dispose();mesh.geometry=g}
+  const flat=shape==='plane';
+  mesh.rotation.x=flat?-Math.PI/2:0; mesh.position.y=flat?0:1.3;
+  controls.target.set(0,flat?0:1.2,0);
+}
+const L={az:45,h:4};
+function light(){const a=L.az*Math.PI/180;sun.position.set(Math.cos(a)*3,L.h,Math.sin(a)*3)}
+
+// ---- Textures ----
+const loader=new THREE.TextureLoader(), tex={}, U={tx:1,ty:1,ox:0,oy:0,rot:0};
+const slots=[
+  ['color','Base Color','map',1],['normal','Normal','normalMap'],
+  ['height','Height','displacementMap'],['rough','Roughness','roughnessMap'],
+  ['metal','Metallic','metalnessMap'],['ao','Occlusion','aoMap'],
+  ['emit','Emission','emissiveMap',1]
+];
+function uv(){Object.values(tex).forEach(t=>{t.repeat.set(U.tx,U.ty);t.offset.set(U.ox,U.oy);t.center.set(.5,.5);t.rotation=U.rot*Math.PI/180})}
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('show'),1800)}
+function setMap(k,prop,t){M[prop]=t;if(k==='height')M.bumpMap=t;M.needsUpdate=true}
+function loadTex(k,prop,srgb,file,el){
+  const u=URL.createObjectURL(file);
+  loader.load(u,t=>{
+    t.wrapS=t.wrapT=THREE.RepeatWrapping; t.anisotropy=R.capabilities.getMaxAnisotropy();
+    if(srgb)t.encoding=THREE.sRGBEncoding;
+    if(tex[k])tex[k].dispose(); tex[k]=t; setMap(k,prop,t); uv();
+    if(k==='rough')D.rough.set(1); if(k==='metal')D.metal.set(1);
+    if(k==='emit'&&M.emissiveIntensity===0)D.emitI.set(1);
+    el.classList.add('has'); el.querySelector('span').textContent=file.name;
+    URL.revokeObjectURL(u); toast('Applied '+k);
+  },undefined,()=>toast('Could not read that image'));
+}
+
+// ---- UI builders ----
+const D={}, P={}, tabs=$('tabs'), body=$('body');
+function cell(p,cls){const d=document.createElement('div');d.className='c '+(cls||'');p.appendChild(d);return d}
+function sl(p,id,label,min,max,step,val,fn){
+  const d=cell(p),dp=step>=1?0:step>=.1?1:2;
+  d.innerHTML='<label><span>'+label+'</span><i></i></label><input type="range">';
+  const i=d.querySelector('input'),o=d.querySelector('i'); i.min=min;i.max=max;i.step=step;
+  const set=v=>{i.value=v;o.textContent=(+v).toFixed(dp);fn(+v)};
+  i.oninput=()=>set(i.value); D[id]={set,val}; set(val);
+}
+function co(p,id,label,val,fn,cls){
+  const d=cell(p,cls); d.innerHTML='<label><span>'+label+'</span></label><input type="color">';
+  const i=d.querySelector('input'); const set=v=>{i.value=v;fn(v)};
+  i.oninput=()=>set(i.value); D[id]={set,val}; set(val);
+}
+function tg(p,id,label,val,fn){
+  const d=cell(p,'t'); d.innerHTML='<input type="checkbox" id="k'+id+'"><label for="k'+id+'">'+label+'</label>';
+  const i=d.querySelector('input'); const set=v=>{i.checked=v;fn(v)};
+  i.onchange=()=>set(i.checked); D[id]={set,val}; set(val);
+}
+function se(p,id,label,opts,val,fn){
+  const d=cell(p); d.innerHTML='<label><span>'+label+'</span></label><select>'+opts.map(o=>'<option>'+o+'</option>').join('')+'</select>';
+  const i=d.querySelector('select'); const set=v=>{i.value=v;fn(v)};
+  i.onchange=()=>set(i.value); D[id]={set,val}; set(val);
+}
+['Maps','Surface','Detail','UV','Scene'].forEach((n,k)=>{
+  const b=document.createElement('button'); b.textContent=n; tabs.appendChild(b);
+  const d=document.createElement('div'); d.className='p'; body.appendChild(d); P[n]=d;
+  b.onclick=()=>{[...tabs.children].forEach(x=>x.classList.toggle('on',x===b));Object.values(P).forEach(x=>x.classList.toggle('on',x===d))};
+  if(!k)b.onclick();
+});
+
+// Maps
+slots.forEach(([k,label,prop,srgb])=>{
+  const d=document.createElement('div'); d.className='s';
+  d.innerHTML='<b>'+label+'</b><span>Tap to add</span><input type="file" accept="image/*"><button aria-label="Remove '+label+'">&times;</button>';
+  const inp=d.querySelector('input');
+  inp.onchange=()=>{if(inp.files[0])loadTex(k,prop,srgb,inp.files[0],d)};
+  d.querySelector('button').onclick=e=>{
+    e.stopPropagation(); if(tex[k]){tex[k].dispose();delete tex[k]}
+    setMap(k,prop,null); inp.value=''; d.classList.remove('has'); d.querySelector('span').textContent='Tap to add';
+  };
+  P.Maps.appendChild(d);
+});
+
+// Surface
+const base={tint:'#ffffff',metal:.1,rough:.5,spec:.5,coat:0,coatR:.1,trans:0,opac:1};
+const presets={Default:{},Metal:{metal:1,rough:.3},Gold:{tint:'#ffcc66',metal:1,rough:.25},Plastic:{metal:0,rough:.4,coat:.8},Rubber:{metal:0,rough:.9,spec:.2},Glass:{metal:0,rough:.05,trans:1},Clay:{tint:'#c9a98a',metal:0,rough:1,spec:.1}};
+const chips=cell(P.Surface,'w chips');
+Object.keys(presets).forEach(n=>{const b=document.createElement('button');b.textContent=n;
+  b.onclick=()=>{for(const k in base)D[k].set(presets[n][k]!==undefined?presets[n][k]:base[k])};chips.appendChild(b)});
+const S=P.Surface;
+co(S,'tint','Base color',base.tint,v=>M.color.set(v),'w');
+sl(S,'metal','Metallic',0,1,.01,base.metal,v=>M.metalness=v);
+sl(S,'rough','Roughness',0,1,.01,base.rough,v=>M.roughness=v);
+sl(S,'spec','Specular',0,1,.01,base.spec,v=>M.reflectivity=v);
+sl(S,'coat','Clearcoat',0,1,.01,base.coat,v=>M.clearcoat=v);
+sl(S,'coatR','Coat roughness',0,1,.01,base.coatR,v=>M.clearcoatRoughness=v);
+sl(S,'trans','Transmission',0,1,.01,base.trans,v=>{M.transmission=v;M.needsUpdate=true});
+sl(S,'opac','Alpha',0,1,.01,base.opac,v=>{const t=v<1;if(M.transparent!==t){M.transparent=t;M.needsUpdate=true}M.opacity=v});
+
+// Detail
+const T=P.Detail;
+sl(T,'normal','Normal strength',0,3,.05,1,v=>M.normalScale.set(v,v));
+sl(T,'bump','Bump strength',0,10,.1,0,v=>M.bumpScale=v);
+sl(T,'disp','Displacement',0,1,.01,.2,v=>M.displacementScale=v);
+sl(T,'dbias','Disp. midlevel',-.5,.5,.01,0,v=>M.displacementBias=v);
+sl(T,'ao','Occlusion',0,2,.05,1,v=>M.aoMapIntensity=v);
+sl(T,'emitI','Emission strength',0,5,.1,0,v=>M.emissiveIntensity=v);
+co(T,'emit','Emission color','#ffffff',v=>M.emissive.set(v),'w');
+tg(T,'flat','Flat shading',false,v=>{M.flatShading=v;M.needsUpdate=true});
+tg(T,'wire','Wireframe',false,v=>M.wireframe=v);
+
+// UV mapping
+const V=P.UV;
+sl(V,'tx','Tile X',.1,10,.1,1,v=>{U.tx=v;uv()});
+sl(V,'ty','Tile Y',.1,10,.1,1,v=>{U.ty=v;uv()});
+sl(V,'ox','Offset X',-1,1,.01,0,v=>{U.ox=v;uv()});
+sl(V,'oy','Offset Y',-1,1,.01,0,v=>{U.oy=v;uv()});
+sl(V,'rot','Rotation',-180,180,1,0,v=>{U.rot=v;uv()});
+
+// Scene
+const C=P.Scene;
+se(C,'shape','Shape',['plane','sphere','cube','torus'],'plane',v=>{shape=v;build()});
+se(C,'seg','Subdivision',[64,128,256,512],256,v=>{seg=+v;build()});
+sl(C,'li','Light strength',0,4,.1,1.2,v=>sun.intensity=v);
+sl(C,'az','Light angle',0,360,1,45,v=>{L.az=v;light()});
+sl(C,'lh','Light height',1,10,.5,4,v=>{L.h=v;light()});
+sl(C,'amb','Ambient',0,1,.05,.4,v=>amb.intensity=v);
+sl(C,'env','Reflections',0,3,.05,1,v=>M.envMapIntensity=v);
+sl(C,'exp','Exposure',.2,3,.05,1,v=>R.toneMappingExposure=v);
+co(C,'bg','Background','#0f172a',v=>scene.background.set(v));
+tg(C,'shadow','Shadows',true,v=>{sun.castShadow=v;M.needsUpdate=true});
+tg(C,'spin','Auto-rotate',false,v=>controls.autoRotate=v);
+tg(C,'grid','Grid',true,v=>grid.visible=v);
+
+$('rst').onclick=()=>{Object.values(D).forEach(d=>d.set(d.val));toast('Settings reset')};
+$('col').onclick=()=>{const m=$('sheet').classList.toggle('min');$('col').textContent=m?'Show':'Hide'};
+
+(function loop(){requestAnimationFrame(loop);controls.update();R.render(scene,camera)})();
+</script>
+</body>
+</html>
